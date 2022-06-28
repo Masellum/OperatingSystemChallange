@@ -159,7 +159,17 @@ void *user_va_to_pa(pagetable_t page_dir, void *va) {
   // (va & (1<<PGSHIFT -1)) means computing the offset of "va" inside its page.
   // Also, it is possible that "va" is not mapped at all. in such case, we can find
   // invalid PTE, and should return NULL.
-  panic( "You have to implement user_va_to_pa (convert user va to pa) to print messages in lab2_1.\n" );
+  // panic( "You have to implement user_va_to_pa (convert user va to pa) to print messages in lab2_1.\n" );
+  pte_t *pte;
+  uint64 pa;
+  if ((uint64)va >= MAXVA) return NULL;
+  pte = page_walk(page_dir, (uint64)va, 0);
+  if (pte == 0 || (*pte & PTE_V) == 0 || ((*pte & PTE_R) && (*pte & PTE_W) == 0)) {
+    return 0;
+  }
+  
+  pa = (PTE2PA(*pte) + ((uint64)va & ((1 << PGSHIFT) - 1)));
+  return (void *)pa;
 
 }
 
@@ -184,6 +194,15 @@ void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free) {
   // (use free_page() defined in pmm.c) the physical pages. lastly, invalidate the PTEs.
   // as naive_free reclaims only one page at a time, you only need to consider one page
   // to make user/app_naive_malloc to behave correctly.
-  panic( "You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n" );
+  // panic( "You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n" );
+  pte_t *pte;
+  uint64 pa;
+  pte = page_walk(page_dir, va, 0);
+  if (pte == 0 || (*pte & PTE_V) == 0 || ((*pte & PTE_R) && (*pte & PTE_W) == 0)) {
+    return;
+  }
+  pa = (PTE2PA(*pte) + ((uint64)va & ((1 << PGSHIFT) - 1)));
+  *pte &= ~PTE_V;
+  if (free) { free_page((void *)pa); }
 
 }
