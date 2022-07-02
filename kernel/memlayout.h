@@ -17,4 +17,6 @@
 // start virtual address (4MB) of our simple heap. added @lab2_2
 #define USER_FREE_ADDRESS_START 0x00000000 + PGSIZE * 1024
 
+#define USER_HEAP_TOP (USER_FREE_ADDRESS_START + 32 * PGSIZE)
+
 #endif

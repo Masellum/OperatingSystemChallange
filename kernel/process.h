@@ -2,6 +2,7 @@
 #define _PROC_H_
 
 #include "riscv.h"
+#include "malloc.h"
 
 typedef struct trapframe_t {
   // space to store context (all common registers)
@@ -26,6 +27,8 @@ typedef struct process_t {
   pagetable_t pagetable;
   // trapframe storing the context of a (User mode) process.
   trapframe* trapframe;
+
+  malloc_chunk* first_free_chunk;
 }process;
 
 // switch to run user app

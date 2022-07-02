@@ -92,9 +92,11 @@ uint64 lookup_pa(pagetable_t pagetable, uint64 va) {
   if (va >= MAXVA) return 0;
 
   pte = page_walk(pagetable, va, 0);
+  // sprint("pte %lx\n", *pte);
   if (pte == 0 || (*pte & PTE_V) == 0 || ((*pte & PTE_R) == 0 && (*pte & PTE_W) == 0))
     return 0;
   pa = PTE2PA(*pte);
+  pa |= (va & 0xfff);
 
   return pa;
 }
@@ -196,13 +198,27 @@ void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free) {
   // to make user/app_naive_malloc to behave correctly.
   // panic( "You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n" );
   pte_t *pte;
+  uint64 first, last;
   uint64 pa;
-  pte = page_walk(page_dir, va, 0);
-  if (pte == 0 || (*pte & PTE_V) == 0 || ((*pte & PTE_R) && (*pte & PTE_W) == 0)) {
-    return;
+  for (first = ROUNDDOWN(va, PGSIZE), last = ROUNDDOWN(va + size - 1, PGSIZE);
+    first <= last; first += PGSIZE) {
+      pte = page_walk(page_dir, va, 0);
+      if (pte == 0 || (*pte & PTE_V) == 0 || ((*pte & PTE_R) && (*pte & PTE_W) == 0)) {
+        return;
+      }
+      pa = (PTE2PA(*pte) + ((uint64)va & ((1 << PGSHIFT) - 1)));
+      *pte &= ~PTE_V;
+      if (free) { free_page((void *)pa); }
   }
-  pa = (PTE2PA(*pte) + ((uint64)va & ((1 << PGSHIFT) - 1)));
-  *pte &= ~PTE_V;
-  if (free) { free_page((void *)pa); }
+
+  // pte_t *pte;
+  // uint64 pa;
+  // pte = page_walk(page_dir, va, 0);
+  // if (pte == 0 || (*pte & PTE_V) == 0 || ((*pte & PTE_R) && (*pte & PTE_W) == 0)) {
+  //   return;
+  // }
+  // pa = (PTE2PA(*pte) + ((uint64)va & ((1 << PGSHIFT) - 1)));
+  // *pte &= ~PTE_V;
+  // if (free) { free_page((void *)pa); }
 
 }

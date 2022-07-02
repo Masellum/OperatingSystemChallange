@@ -10,6 +10,7 @@
 #include "vmm.h"
 #include "memlayout.h"
 #include "spike_interface/spike_utils.h"
+#include "malloc.h"
 
 // process is a structure defined in kernel/process.h
 process user_app;
@@ -52,6 +53,11 @@ void load_user_program(process *proc) {
   // USER_STACK_TOP = 0x7ffff000, defined in kernel/memlayout.h
   proc->trapframe->regs.sp = USER_STACK_TOP;  //virtual address of user stack top
 
+  proc->first_free_chunk = (malloc_chunk *)(USER_FREE_ADDRESS_START);
+//   uint64 first_chunk_pa = (uint64)alloc_page();
+  malloc_chunk * first_chunk_pa = (malloc_chunk *)alloc_page();
+  uint64* first_chunk_footer = (uint64*)alloc_page();
+
   sprint("user frame 0x%lx, user stack 0x%lx, user kstack 0x%lx \n", proc->trapframe,
          proc->trapframe->regs.sp, proc->kstack);
 
@@ -71,6 +77,19 @@ void load_user_program(process *proc) {
   // here, we assume that the size of usertrap.S is smaller than a page.
   user_vm_map((pagetable_t)proc->pagetable, (uint64)trap_sec_start, PGSIZE, (uint64)trap_sec_start,
          prot_to_type(PROT_READ | PROT_EXEC, 0));
+
+  user_vm_map((pagetable_t)proc->pagetable, (uint64)proc->first_free_chunk, 
+         sizeof(malloc_chunk), (uint64)first_chunk_pa, prot_to_type(PROT_READ | PROT_WRITE, 1));
+  
+  user_vm_map((pagetable_t)proc->pagetable, (uint64)USER_HEAP_TOP - 8, 8, (uint64)first_chunk_footer, prot_to_type(PROT_READ | PROT_WRITE, 1));
+
+  first_chunk_pa->mchunk_size = 32 * PGSIZE;
+  first_chunk_pa->mchunk_size |= CHUNK_FREE;
+  first_chunk_pa->fd = NULL;
+  first_chunk_pa->bk = NULL;
+  first_chunk_pa->prev = NULL;
+  *(uint64*)FOOTER((first_chunk_pa)) = first_chunk_pa->mchunk_size;
+
 }
 
 //
