@@ -69,6 +69,11 @@ typedef struct process_t {
   // next queue element
   struct process_t *queue_next;
 
+  struct process_t *waiting_queue_next;
+
+  long waiting_pid;
+  int need_scheduled;
+
   // accounting. added @lab3_3
   int tick_count;
 }process;
@@ -93,8 +98,18 @@ int free_process( process* proc );
 // fork a child from parent
 int do_fork(process* parent);
 
+int clean_process(process *proc);
+
+int do_wait(process *parent, long pid);
+
+void do_idle();
+
+extern process procs[NPROC];
+
 // current running process
 extern process* current;
+
+extern process* idle;
 
 // address of the first free page in our simple heap. added @lab2_2
 extern uint64 g_ufree_page;

@@ -32,6 +32,8 @@ process procs[NPROC];
 // current points to the currently running user-mode application.
 process* current = NULL;
 
+process *idle = NULL;
+
 // points to the first free page in our simple heap. added @lab2_2
 uint64 g_ufree_page = USER_FREE_ADDRESS_START;
 
@@ -56,7 +58,9 @@ void switch_to(process* proc) {
   // SSTATUS_SPP and SSTATUS_SPIE are defined in kernel/riscv.h
   // set S Previous Privilege mode (the SSTATUS_SPP bit in sstatus register) to User mode.
   unsigned long x = read_csr(sstatus);
-  x &= ~SSTATUS_SPP;  // clear SPP to 0 for user mode
+  // x &= ~SSTATUS_SPP;  // clear SPP to 0 for user mode
+  if (proc != idle) x &= ~SSTATUS_SPP;
+  else x |= SSTATUS_SPP;
   x |= SSTATUS_SPIE;  // enable interrupts in user mode
 
   // write x back to 'sstatus' register to enable interrupts, and sret destination mode.
@@ -93,7 +97,7 @@ process* alloc_process() {
   // locate the first usable process structure
   int i;
 
-  for( i=0; i<NPROC; i++ )
+  for( i=1; i<NPROC; i++ )
     if( procs[i].status == FREE ) break;
 
   if( i>=NPROC ){
@@ -207,6 +211,21 @@ int do_fork( process* parent)
         child->mapped_info[child->total_mapped_region].seg_type = CODE_SEGMENT;
         child->total_mapped_region++;
         break;
+      case DATA_SEGMENT:
+        uint64 newpage = (uint64)alloc_page();
+        memset((void *)newpage, 0, PGSIZE);
+        user_vm_map(
+          (pagetable_t)child->pagetable, parent->mapped_info[i].va, PGSIZE,
+          newpage, prot_to_type(PROT_READ | PROT_WRITE, 1)
+        );
+        child->mapped_info[child->total_mapped_region].va = parent->mapped_info[i].va;
+        child->mapped_info[child->total_mapped_region].npages =
+          parent->mapped_info[i].npages;
+        child->mapped_info[child->total_mapped_region].seg_type = DATA_SEGMENT;
+        child->total_mapped_region++;
+        memcpy( (void*)lookup_pa(child->pagetable, child->mapped_info[i].va),
+          (void*)lookup_pa(parent->pagetable, parent->mapped_info[i].va), PGSIZE );
+        break;
     }
   }
 
@@ -216,4 +235,83 @@ int do_fork( process* parent)
   insert_to_ready_queue( child );
 
   return child->pid;
+}
+
+int clean_process(process *proc) {
+  if (proc == current) return 0;
+  for (int i = 0; i < proc->total_mapped_region; ++i) {
+// sprint("DEBUG: cleaning region %d.\n", i);
+    switch (proc->mapped_info[i].seg_type)
+    {
+    case CONTEXT_SEGMENT:
+// sprint("DEBUG: cleaning trapframe.\n");
+      user_vm_unmap((pagetable_t)proc->pagetable, (uint64)proc->trapframe,PGSIZE, 1);
+      break;
+    case STACK_SEGMENT:
+// sprint("DEBUG: cleaning user stack.\n");
+      user_vm_unmap((pagetable_t)proc->pagetable, USER_STACK_TOP - PGSIZE, PGSIZE, 1);
+      // user_vm_unmap((pagetable_t)proc->pagetable, proc->trapframe->regs.sp, USER_STACK_TOP - proc->trapframe->regs.sp, 1);
+      break;
+    case SYSTEM_SEGMENT:
+// sprint("DEBUG: cleaning trap_sec.\n");
+      user_vm_unmap((pagetable_t)proc->pagetable, (uint64)trap_sec_start, PGSIZE, 1);
+      break;
+    case CODE_SEGMENT:
+// sprint("DEBUG: there is no need to clean code segment.");
+      break;
+    case DATA_SEGMENT:
+// sprint("DEBUG: cleaning data segment %d.\n", i);
+      user_vm_unmap((pagetable_t)proc->pagetable, proc->mapped_info[i].va, PGSIZE, 1);
+      break;
+    default:
+      break;
+    }
+  }
+// sprint("DEBUG: freeing mapped_info.\n");
+  free_page(proc->mapped_info);
+// sprint("DEBUG: freeing kstack.\n");
+  free_page((void *)(proc->kstack - PGSIZE));
+// sprint("DEBUG: freeing pagetable.\n");
+  free_page(proc->pagetable);
+// sprint("DEBUG: freeing trapframe.\n");
+  free_page(proc->trapframe);
+  proc->status = FREE;
+  return 1;
+}
+
+int do_wait(process *parent, long pid) {
+  if (pid > 0) {
+    if (pid >= NPROC || procs[pid].parent != parent) return -1;
+    if (procs[pid].status == ZOMBIE) {
+      clean_process(&procs[pid]);
+    }
+    parent->status = BLOCKED;
+    parent->waiting_pid = pid;
+    insert_to_waiting_queue(parent);
+    remove_from_ready_queue(parent);
+    schedule();
+    return pid;
+  } else if (pid == -1) {
+    parent->status = BLOCKED;
+    parent->waiting_pid = pid;
+    insert_to_waiting_queue(parent);
+    remove_from_ready_queue(parent);
+    schedule();
+    return pid;
+  } else {
+    return -1;
+  }
+}
+
+void do_idle() {
+  // unsigned long x = read_csr(sstatus);
+  for (uint64 i = 0; ; ++i) {
+    if (i % 10000000 == 0) {
+      // sprint("system idle.\n");
+    }
+  }
+  // unsigned long x = read_const_csr(sstatus);
+  // x |= SSTATUS_SPP;
+  // write_csr(sstatus, x);
+  // asm volatile("wfi");
 }

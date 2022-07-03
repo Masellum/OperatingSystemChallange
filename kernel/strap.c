@@ -85,13 +85,61 @@ void rrsched() {
   // TIME_SLICE_LEN (means it has consumed its time slice), change its status into READY,
   // place it in the rear of ready queue, and finally schedule next process to run.
   // panic( "You need to further implement the timer handling in lab3_3.\n" );
-  if (++(current->tick_count) >= TIME_SLICE_LEN) {
+  if (++(current->tick_count) >= TIME_SLICE_LEN || current->need_scheduled == 1) {
     current->tick_count = 0;
     current->status = READY;
-    insert_to_ready_queue(current);
+    current->need_scheduled = 0;
+    if (current != idle)
+      insert_to_ready_queue(current);
     schedule();
   }
 
+}
+
+void check_waiting_list() {
+// sprint("DEBUG: going to check waiting list.\n");
+  if (waiting_queue_head) {
+    process *waiter = waiting_queue_head, *prev = NULL;
+    while (waiter != NULL) {
+      assert(waiter->status == BLOCKED);
+      if (waiter->waiting_pid == -1) {
+// sprint("DEBUG: %d is waiting -1;\n", waiter->pid);
+        int found = 0;
+        for (int j = 1; j < NPROC; ++j) {
+          if (procs[j].parent != NULL) {
+            if (procs[j].parent == waiter && procs[j].status == ZOMBIE) {
+// sprint("DEBUG: parent (%d) going to clean child (%d).\n", waiter->pid, j);
+              if (clean_process(&procs[j])) {
+// sprint("DEBUG: cleaned parent (%d)'s child (%d).\n", waiter->pid, j);
+                waiter->waiting_pid = 0;
+                if (prev != NULL) {
+                  prev->waiting_queue_next = waiter->waiting_queue_next;
+                }
+                insert_to_ready_queue(waiter);
+                found = 1;
+                break;
+              }
+            }
+          }
+        }
+        prev = found ? prev : waiter;
+      } else if (procs[waiter->waiting_pid].status == ZOMBIE) {
+// sprint("DEBUG: %d is waiting child %d;\n", waiter->pid, waiter->waiting_pid);
+        if (clean_process(&procs[waiter->waiting_pid])) {
+// sprint("DEBUG: cleaned parent (%d)'s child (%d).\n", waiter->pid, waiter->waiting_pid);
+          waiter->waiting_pid = 0;
+          if (prev != NULL) {
+            prev->waiting_queue_next = waiter->waiting_queue_next;
+          }
+          insert_to_ready_queue(waiter);
+        } else {
+          prev = waiter;
+        }
+      }
+      waiter = waiter->waiting_queue_next;
+    }
+  }
+// sprint("DEBUG: checked waiting queue list.\n");
 }
 
 //
@@ -101,7 +149,7 @@ void rrsched() {
 void smode_trap_handler(void) {
   // make sure we are in User mode before entering the trap handling.
   // we will consider other previous case in lab1_3 (interrupt).
-  if ((read_csr(sstatus) & SSTATUS_SPP) != 0) panic("usertrap: not from user mode");
+  if (current != idle && (read_csr(sstatus) & SSTATUS_SPP) != 0) panic("usertrap: not from user mode");
 
   assert(current);
   // save user process counter.
@@ -119,6 +167,7 @@ void smode_trap_handler(void) {
     case CAUSE_MTIMER_S_TRAP:
       handle_mtimer_trap();
       // invoke round-robin scheduler. added @lab3_3
+      check_waiting_list();
       rrsched();
       break;
     case CAUSE_STORE_PAGE_FAULT:

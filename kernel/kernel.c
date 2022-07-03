@@ -43,6 +43,31 @@ process* load_user_program() {
   return proc;
 }
 
+void init_idle() {
+  idle = &procs[0];
+  idle->kstack = (uint64)alloc_page() + PGSIZE;
+  idle->pagetable = g_kernel_pagetable;
+  idle->trapframe = (trapframe *)alloc_page();
+  memset(idle->trapframe, 0, sizeof(trapframe));
+  idle->trapframe->regs.sp = idle->kstack;
+  idle->trapframe->epc = (uint64)do_idle;
+  // idle->mapped_info = (mapped_region *)alloc_page();
+  idle->mapped_info = NULL;
+  idle->total_mapped_region = 0;
+  idle->pid = 0;
+  idle->status = READY;
+  idle->parent = NULL;
+  idle->queue_next = NULL;
+  idle->waiting_queue_next = NULL;
+  idle->waiting_pid = 0;
+  idle->tick_count = 0;
+}
+
+void clean_idle() {
+  // free_page((void *)idle->mapped_info);
+  user_vm_unmap(g_kernel_pagetable, (uint64)idle->trapframe, PGSIZE, 1);
+  free_page((void *)idle->kstack - PGSIZE);
+}
 //
 // s_start: S-mode entry point of riscv-pke OS kernel.
 //
@@ -66,6 +91,7 @@ int s_start(void) {
 
   // added @lab3_1
   init_proc_pool();
+  init_idle();
 
   sprint("Switch to user mode...\n");
   // the application code (elf) is first loaded into memory, and then put into execution
