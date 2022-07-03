@@ -305,11 +305,20 @@ int do_wait(process *parent, long pid) {
 
 void do_idle() {
   // unsigned long x = read_csr(sstatus);
-  for (uint64 i = 0; ; ++i) {
-    if (i % 10000000 == 0) {
-      // sprint("system idle.\n");
+  for (;;) {
+    check_waiting_list();
+    if (current->need_scheduled) {
+      current->tick_count = 0;
+      current->status = READY;
+      current->need_scheduled = 0;
+      schedule();
     }
   }
+  // for (uint64 i = 0; ; ++i) {
+  //   if (i % 10000000 == 0) {
+  //     // sprint("system idle.\n");
+  //   }
+  // }
   // unsigned long x = read_const_csr(sstatus);
   // x |= SSTATUS_SPP;
   // write_csr(sstatus, x);
